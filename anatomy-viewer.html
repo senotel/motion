@@ -1,6 +1,166 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Motion · Anatomy Studio</title>
-<style>
-*{box-sizing:border-box}html,body{height:100%;width:100%}body{margin:0;background:#11191c;color:#f3eee5;font:13px system-ui,sans-serif;overflow:hidden}canvas{display:block;touch-action:none;width:100vw;height:100vh}#status{position:absolute;top:18px;left:20px;right:20px;pointer-events:none;line-height:1.5}#status strong{display:block;font-size:16px}#toolbar{position:absolute;bottom:16px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:7px}button{border:1px solid #5d6c70;border-radius:10px;background:#19262b;color:#fff;padding:9px 12px;min-height:38px;font:inherit;cursor:pointer}button[aria-pressed=true]{border-color:#fba977;background:#5b2b18}#label{color:#ffb185}#loading{position:absolute;top:45%;width:100%;text-align:center;color:#dfd9cc}.hint{color:#b1bfbf;font-size:11px}
-</style><script type="importmap">{"imports":{"three":"./vendor/build/three.module.js"}}</script></head>
-<body><div id="status"><strong>ANATOMY STUDIO</strong><div id="label">218 selectable muscle regions</div><div class="hint">Drag to rotate · pinch or scroll to zoom · tap a muscle</div></div><div id="loading">Loading detailed anatomy…</div><canvas aria-label="Interactive three-dimensional muscle atlas"></canvas><div id="toolbar"><button id="front">Front</button><button id="back">Back</button><button id="muscles" aria-pressed="true">All muscles</button><button id="deep" aria-pressed="false">Deep layer</button><button id="skeleton" aria-pressed="false">Skeleton</button><button id="reset">Reset view</button></div><script type="module" src="./anatomy-viewer.js"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Motion · Anatomy Studio</title>
+    <style>
+      @font-face {
+        font-family: Archivo;
+        src: url('./fonts/Archivo-Regular.ttf');
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+      }
+      body {
+        margin: 0;
+        background: #eef0ee;
+        color: #202723;
+        font:
+          14px Archivo,
+          system-ui,
+          sans-serif;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        touch-action: none;
+        width: 100vw;
+        height: 100vh;
+      }
+      #status {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        right: 60px;
+        pointer-events: none;
+        line-height: 1.5;
+      }
+      #status strong {
+        display: block;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      #toolbar {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      button {
+        border: 1px solid #bfc8c2;
+        border-radius: 7px;
+        background: #ffffffed;
+        color: #37473e;
+        padding: 8px 12px;
+        min-height: 42px;
+        font: inherit;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      button:hover {
+        background: #e0f1eb;
+      }
+      button:focus-visible {
+        outline: 3px solid #276b58;
+        outline-offset: 2px;
+      }
+      button[aria-pressed='true'] {
+        border-color: #276b58;
+        background: #276b58;
+        color: #fff;
+      }
+      #label {
+        color: #1c5c4a;
+        font-weight: 600;
+      }
+      #loading {
+        position: absolute;
+        top: 45%;
+        width: 100%;
+        text-align: center;
+        color: #4e5d55;
+      }
+      .hint {
+        color: #4e5d55;
+        font-size: 12px;
+      }
+      #view-controls {
+        position: absolute;
+        right: 14px;
+        top: 20px;
+        display: grid;
+        gap: 6px;
+      }
+      #view-controls button {
+        width: 42px;
+        font-size: 19px;
+        padding: 5px;
+      }
+      @media (max-width: 500px) {
+        #status {
+          top: 14px;
+          left: 14px;
+        }
+        #toolbar {
+          bottom: 10px;
+          left: 10px;
+          right: 10px;
+          gap: 4px;
+        }
+        #toolbar button {
+          padding: 7px 9px;
+          font-size: 13px;
+        }
+        .hint {
+          max-width: 190px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        button {
+          transition: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "./vendor/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="status">
+      <strong>Muscle atlas</strong>
+      <div id="label" role="status" aria-live="polite">
+        Select a muscle to explore
+      </div>
+      <div class="hint">Drag to rotate. Scroll or pinch to zoom.</div>
+    </div>
+    <div id="loading" role="status">Loading detailed anatomy…</div>
+    <canvas
+      aria-label="Interactive three-dimensional muscle atlas. Use the view controls or the searchable muscle list in Motion."
+    ></canvas>
+    <div id="view-controls" aria-label="Adjust view">
+      <button id="left" aria-label="Rotate left" title="Rotate left">↶</button
+      ><button id="right" aria-label="Rotate right" title="Rotate right">
+        ↷</button
+      ><button id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button
+      ><button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+    </div>
+    <div id="toolbar" aria-label="Atlas layers">
+      <button id="front">Front</button><button id="back">Back</button
+      ><button id="surface" aria-pressed="true">Physique</button
+      ><button id="muscles" aria-pressed="false">Muscles</button
+      ><button id="deep" aria-pressed="false">Deep layer</button
+      ><button id="skeleton" aria-pressed="false">Skeleton</button
+      ><button id="reset">Reset view</button>
+    </div>
+    <script type="module" src="./anatomy-viewer.js?v=20261021.1"></script>
+  </body>
+</html>

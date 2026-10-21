@@ -58,3 +58,6 @@ PUBLIC COPY (ShareAlike)
   https://github.com/slfresh/fitmitwith-anatomy-atlas
 
 Motion integration: models distributed unchanged. Runtime proportions, colors and selection styling are illustrative adaptations under CC BY-SA 4.0. No anatomical measurements or medical conclusions are inferred from these transforms.
+
+Human surface and facial geometry: MakeHuman Community hm08 base mesh and adult macrodetail targets, released CC0 in September 2020. Source: https://github.com/makehumancommunity/makehuman at a8bc2d54ff0ac92e78ff71431b1023eda42bf482, makehuman/data/3dobjs/base.obj and makehuman/data/targets/macrodetails/. Only CC0 asset data is used; no MakeHuman application code is included. Motion converts body faces into compact GLB, blends adult macrodetail targets equally, and includes four authored muscle/weight morphs. Neutral presentation blends masculine/feminine surface positions. Source license: https://static.makehumancommunity.org/about/license.html . Converter: scripts/build-physique.py in the Motion source workspace.
+The surface reference is illustrative and cannot infer measured body composition or predict results. The muscle atlas remains at its original anatomical proportions.

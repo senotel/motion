@@ -1,3 +1,4 @@
+import { surfaceRegion } from './surface-region.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/examples/jsm/controls/OrbitControls.js';
@@ -22,6 +23,8 @@ let renderer,
   atlas,
   surface,
   head,
+  wear,
+  wearMeshes = [],
   meshes = [],
   selectedMesh,
   lastFit,
@@ -119,6 +122,14 @@ if (renderer) {
       THREE.MathUtils.clamp(state.heightCm, 100, 230) / 170,
     );
     morph(surface);
+    highlightSurface(surface);
+    wear.scale.copy(surfaceMode ? surface.scale : new THREE.Vector3(1, 1, 1));
+    for (const garment of wearMeshes) {
+      highlightSurface(garment, true);
+      garment.visible = garment.name === 'TrainingShorts' || surfaceMode;
+      if (surfaceMode) morph(garment);
+      else garment.morphTargetInfluences.fill(0);
+    }
     for (const mesh of meshes) {
       const bone =
           mesh.userData.group === 'Skeleton' ||
@@ -170,9 +181,10 @@ if (renderer) {
     loading.textContent = 'Loading human anatomy…';
     try {
       const sex = state.model === 'feminine' ? 'female' : 'male';
-      const [anatomy, human] = await Promise.all([
+      const [anatomy, human, clothing] = await Promise.all([
         new GLTFLoader().loadAsync(`./models/full-body-${sex}-mobile.glb`),
         new GLTFLoader().loadAsync(`./models/physique-${sex}.glb`),
+        new GLTFLoader().loadAsync(`./models/training-wear-${sex}.glb`),
       ]);
       if (request !== generation) return;
       if (model) {
@@ -212,11 +224,44 @@ if (renderer) {
           side: THREE.DoubleSide,
         });
       }
+      wear = clothing.scene;
+      wearMeshes = [];
+      wear.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.geometry = mesh.geometry.clone();
+        mesh.geometry.computeVertexNormals();
+        mesh.material = new THREE.MeshStandardMaterial({
+          color: '#303e37',
+          roughness: 1,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        });
+        wearMeshes.push(mesh);
+      });
       // A complete neutral presentation blends the two authored surfaces rather than inferring gender.
       if (state.model === 'neutral') {
         const feminine = await new GLTFLoader().loadAsync(
           './models/physique-female.glb',
         );
+        if (request !== generation) return;
+        const feminineWear = await new GLTFLoader().loadAsync(
+          './models/training-wear-female.glb',
+        );
+        if (request !== generation) return;
+        for (const garment of wearMeshes) {
+          const a = garment.geometry.attributes.position,
+            b = feminineWear.scene.getObjectByName(garment.name).geometry
+              .attributes.position;
+          for (let i = 0; i < a.count; i++)
+            a.setXYZ(
+              i,
+              (a.getX(i) + b.getX(i)) / 2,
+              (a.getY(i) + b.getY(i)) / 2,
+              (a.getZ(i) + b.getZ(i)) / 2,
+            );
+          a.needsUpdate = true;
+          garment.geometry.computeVertexNormals();
+        }
         for (const [mesh, name] of [
           [surface, 'PhysiqueSurface'],
           [head, 'AnatomicalHead'],
@@ -236,7 +281,7 @@ if (renderer) {
         }
       }
       if (request !== generation) return;
-    model.add(atlas, surface, head);
+      model.add(atlas, surface, head, wear);
       scene.add(model);
       selectedMesh = null;
       lastFit = null;
@@ -251,16 +296,43 @@ if (renderer) {
       emit({ error: true });
     }
   }
+  function highlightSurface(mesh, fabric = false) {
+    const positions = mesh.geometry.attributes.position;
+    let colors = mesh.geometry.attributes.color;
+    if (!colors) {
+      colors = new THREE.Float32BufferAttribute(
+        new Float32Array(positions.count * 3),
+        3,
+      );
+      mesh.geometry.setAttribute('color', colors);
+    }
+    const base = new THREE.Color(fabric ? '#303e37' : '#b2bab6'),
+      accent = new THREE.Color('#287c68');
+    for (let i = 0; i < positions.count; i++) {
+      const region = surfaceRegion({
+        x: positions.getX(i),
+        y: positions.getY(i),
+        z: positions.getZ(i),
+      });
+      const selected =
+        region &&
+        state.selected.some(
+          (key) => region.key.startsWith(key) || key.startsWith(region.key),
+        );
+      const color = selected ? accent : base;
+      colors.setXYZ(i, color.r, color.g, color.b);
+    }
+    colors.needsUpdate = true;
+    mesh.material.vertexColors = true;
+    mesh.material.color.set('#ffffff');
+    mesh.material.needsUpdate = true;
+  }
   let down;
   canvas.addEventListener('pointerdown', (event) => {
     down = { x: event.clientX, y: event.clientY };
   });
   canvas.addEventListener('pointerup', (event) => {
-    if (
-      state.layer === 'surface' ||
-      !down ||
-      Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8
-    )
+    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8)
       return;
     const rect = canvas.getBoundingClientRect(),
       point = new THREE.Vector2(
@@ -269,6 +341,20 @@ if (renderer) {
       ),
       ray = new THREE.Raycaster();
     ray.setFromCamera(point, camera);
+    if (state.layer === 'surface') {
+      const bodyHit = ray.intersectObject(surface, false)[0];
+      if (!bodyHit) return;
+      const point = surface.worldToLocal(bodyHit.point.clone());
+      const region = surfaceRegion(point);
+      if (region) {
+        state.selected = [region.key];
+        label.textContent = region.label + ' / training region';
+        refresh();
+        label.textContent = region.label + ' / training region';
+        emit({ muscle: region.key, label: region.label });
+      }
+      return;
+    }
     const hit = ray.intersectObjects(
       meshes.filter((m) => m.visible && m.userData.muscleId),
       false,
@@ -335,7 +421,7 @@ if (renderer) {
       if (data?.type !== 'motion-body') return;
       const previous = state.model;
       Object.assign(state, data);
-      if (data.selected?.length) state.layer = 'muscles';
+
       if (state.model !== previous) void load();
       else refresh();
     } catch {}
